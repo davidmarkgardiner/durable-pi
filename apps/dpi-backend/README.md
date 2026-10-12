@@ -30,11 +30,28 @@ With the repo's network config, `just net up local && just backend run` does the
 | `DPI_DATA_DIR` | `$DPI_HOME/backend` | catalog, app state, `sessions/`, `archive/` |
 | `DPI_HOME` | `~/.dpi` | where `backend.env` is read (set by the service unit) |
 | `DPI_ENV_FILE` | `$DPI_HOME/backend.env` | the env file to read |
-| `DPI_PROVIDER` | `openrouter` | `faux` gives a free deterministic model for tests |
+| `DPI_PROVIDER` | `openrouter` | `faux` gives a deterministic model for tests; `openai-codex` uses the local Codex ChatGPT login |
+| `DPI_CODEX_AUTH_FILE` | `~/.codex/auth.json` | For `openai-codex`, the Codex auth file read on every request. No credentials are copied or modified |
 | `OPENROUTER_API_KEY` | | model access, required unless `DPI_PROVIDER=faux`. Without it the device lists no models. Never sent to clients |
 | `TYPESAFE_API_KEY` | | optional: `jev-damage-control` asks Jev with it, else through OpenRouter |
 
 Flags `--port`, `--host`, `--name`, `--start-dirs`, `--data-dir` and `--env-file` override the env.
+
+### Use the local Codex ChatGPT login
+
+Set `env: { DPI_PROVIDER: openai-codex }` and `env_keys: []` for the local device in
+`dpi-network.yaml`, then run `just net up local`. If the backend runs in a terminal,
+restart it after updating the config. The default model is `gpt-6.1-sol`.
+
+The backend reads the current access token from Codex's auth file for each request.
+Codex owns login and token refresh; Durable Pi never writes this file or uses its
+refresh token. If the access token expires, use Codex to refresh its login and retry.
+This adapter requires file-based Codex authentication; keychain-only login is not read.
+Usage draws on the account's Codex allowance. Displayed token cost estimates are
+model catalog estimates, not a subscription bill.
+
+The proactive incident demo's Jev classifier still needs an OpenRouter or TypeSafe
+key. Changing this backend's provider does not change that separate demo.
 
 ## Deploy to other devices
 

@@ -39,6 +39,8 @@ import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT as ctx, withAbortSignal } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { localCodexProvider } from "./codex-provider.js";
+import type { BackendProvider } from "./config.js";
 import { curatedModels, defaultModelId } from "./model-catalog.js";
 import { fauxModels, installFaux } from "./faux.js";
 import {
@@ -90,7 +92,7 @@ export interface StoreOptions {
   dataDir: string;
   startDirs: string[];
   name: string;
-  provider: "openrouter" | "faux";
+  provider: BackendProvider;
 }
 
 /** Agent documents a client may read or stream, by kind. */
@@ -177,8 +179,9 @@ export class Store {
   }
 
   private constructor(readonly options: StoreOptions) {
-    if (options.provider === "faux") installFaux(this.models);
-    else {
+    installFaux(this.models);
+    if (options.provider === "openai-codex") this.models.setProvider(localCodexProvider());
+    else if (options.provider === "openrouter") {
       const provider = openrouterProvider();
       const catalog = provider.getModels();
       for (const model of curatedModels)
@@ -264,6 +267,7 @@ export class Store {
   }
 
   private defaultModel() {
+    if (this.options.provider === "openai-codex") return "gpt-6.1-sol";
     return this.options.provider === "faux" ? fauxModels[0].id : defaultModelId;
   }
 
@@ -279,7 +283,13 @@ export class Store {
         reasoning: false,
         cost: { input: 0, output: 0 },
       }));
-    const available = await this.models.getAvailable("openrouter", { signal: AbortSignal.timeout(10000) });
+    const available = await this.models.getAvailable(this.options.provider, { signal: AbortSignal.timeout(10000) });
+    if (this.options.provider === "openai-codex")
+      return available.map((m) => ({
+        id: m.id, provider: m.provider, name: m.name, tier: "", icon: "openai.png",
+        contextWindow: m.contextWindow, reasoning: m.reasoning,
+        cost: { input: m.cost.input, output: m.cost.output },
+      }));
     return curatedModels.flatMap((c) => {
       const m = available.find((m) => m.id === c.id);
       return m
@@ -300,6 +310,11 @@ export class Store {
   }
 
   routedModel(model?: ModelRef): ModelRef {
+    if (this.options.provider === "openai-codex") {
+      const modelId = model?.provider === "openai-codex" && this.models.getModel(model.provider, model.modelId)
+        ? model.modelId : this.defaultModel();
+      return { provider: "openai-codex", modelId };
+    }
     if (this.options.provider === "faux") {
       const id = fauxModels.some((m) => m.id === model?.modelId) ? model!.modelId : fauxModels[0].id;
       return { provider: "faux", modelId: id };
@@ -315,8 +330,9 @@ export class Store {
     const m = model as ModelRef | undefined;
     if (!m || typeof m.provider !== "string" || typeof m.modelId !== "string")
       throw invalid("model must be { provider, modelId }");
-    const known =
-      this.options.provider === "faux"
+    const known = this.options.provider === "openai-codex"
+      ? m.provider === "openai-codex" && !!this.models.getModel(m.provider, m.modelId)
+      : this.options.provider === "faux"
         ? m.provider === "faux" && fauxModels.some((f) => f.id === m.modelId)
         : m.provider === "openrouter" &&
           curatedModels.some((c) => c.id === m.modelId) &&

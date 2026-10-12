@@ -5,6 +5,8 @@ import { existsSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 
+export type BackendProvider = "openrouter" | "faux" | "openai-codex";
+
 export interface BackendConfig {
   name: string;
   host: string;
@@ -13,7 +15,7 @@ export interface BackendConfig {
   envFile: string;
   dataDir: string;
   startDirs: string[];
-  provider: "openrouter" | "faux";
+  provider: BackendProvider;
   token: string;
 }
 
@@ -30,6 +32,9 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env): Bac
   const home = expand(env.DPI_HOME ?? join(homedir(), ".dpi"));
   const envFile = expand(flag("--env-file", env.DPI_ENV_FILE ?? join(home, "backend.env")));
   if (existsSync(envFile)) process.loadEnvFile(envFile);
+  const provider = env.DPI_PROVIDER ?? "openrouter";
+  if (provider !== "openrouter" && provider !== "faux" && provider !== "openai-codex")
+    throw Error(`Unknown DPI_PROVIDER: ${provider}`);
   const config: BackendConfig = {
     name: flag("--name", env.DPI_DEVICE_NAME ?? hostname().replace(/\.local$/, "")),
     host: flag("--host", env.DPI_HOST ?? "127.0.0.1"),
@@ -41,7 +46,7 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env): Bac
       .split(":")
       .filter(Boolean)
       .map((p) => resolve(expand(p))),
-    provider: (env.DPI_PROVIDER ?? "openrouter") === "faux" ? "faux" : "openrouter",
+    provider,
     token: env.DPI_TOKEN ?? "",
   };
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535)
