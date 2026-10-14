@@ -42,6 +42,21 @@ export type JobStepStatus = "running" | "done" | "error" | "waiting";
 export type JobPhaseStatus = "pending" | "running" | "waiting" | "done" | "failed" | "aborted" | "skipped";
 export type JobRunStatus = "running" | "waiting" | "completed" | "failed" | "aborted" | "declined";
 
+export type IncidentHandoff = {
+  source: string;
+  triggeredAt: number;
+  samples: { at: number; status: number; route: string; image: string; error: string; model: string; decision: string; probability: number }[];
+  policy: { minimumIncidents: number; minimumProbability: number; matched: boolean };
+  transport: string;
+  dispatcher: string;
+  agent: string;
+  contextId: string;
+  requestId: string;
+  messageId: string;
+  instruction: string;
+  delivery: { kind: "accepted"; taskId: string; taskState: string } | { kind: "unconfirmed"; reason: string };
+};
+
 export type JobStep = {
   id: string;
   kind: JobStepKind;
@@ -68,6 +83,7 @@ export type JobPhaseRun = {
 };
 
 export type JobRun = {
+  canStartIncident?: boolean;
   /** The job's durable task id. */
   id: number;
   job: string;
@@ -83,6 +99,28 @@ export type JobRun = {
   phase?: string;
   phases: JobPhaseRun[];
   approval?: "pending" | "approved" | "declined" | "cancelled";
+  incidentHandoff?: IncidentHandoff;
+  approvalBinding?: {
+    taskId: string;
+    approvalId: string;
+    request: { op_id: string; revision: number; proposal_hash: string; decision_id: string }
+      | { project: number; iid: number; head_sha: string; base_sha: string };
+  };
+  decisionSummary?: {
+    cause: string;
+    change: string;
+    expectedResult: string;
+    scope: string;
+    approveEffect: string;
+    declineEffect: string;
+    operation: string;
+    revision: number;
+    proposalHash: string;
+    review: string;
+    mergeRequestUrl?: string;
+    headSha?: string;
+    pipelineUrl?: string;
+  };
   childConversationId?: number;
   /** How many times the run continued from a checkpoint after a restart. */
   resumed: number;

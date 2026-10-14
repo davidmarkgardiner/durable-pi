@@ -310,6 +310,10 @@ export const interrupting = ref(false);
 /** Escape and the Interrupt button: stop foreground work and owned subagents; background jobs continue. */
 export async function interrupt() {
   if (!busy.value || interrupting.value || !agentHandle.value) return;
+  if (detail.value?.interaction?.kind === "native-chat") {
+    notify("This native chat request runs to completion. Follow-up is available when it finishes.");
+    return;
+  }
   interrupting.value = true;
   const done = await attempt(() => agentHandle.value!.abort(false));
   if (done) notify("Foreground work interrupted. Background jobs continue.");

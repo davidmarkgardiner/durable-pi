@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { ArrowUp, ChevronDown, Clock3, Octagon, X } from "lucide-vue-next";
 import type { WhenBusy } from "@sdk/api";
 import { newId } from "../client/ids";
-import { commands, parseCommand, type SlashCommand } from "../client/commands";
+import { availableCommands, parseCommand, type SlashCommand } from "../client/commands";
 import {
   agentHandle,
   agentState,
@@ -14,10 +14,23 @@ import {
   online,
   selected,
   ui,
+  detail,
+  deviceFeed,
 } from "../client/store";
 
 const mode = ref<WhenBusy>("followUp");
 const pending = ref(false);
+const nativeChat = computed(() => detail.value?.interaction?.kind === "native-chat");
+const nativeBudget = computed(() => {
+  const value = deviceFeed.sharedState.value?.value;
+  if (!value || typeof value !== "object" || !("nativeChat" in value)) return undefined;
+  const chat = value.nativeChat;
+  if (!chat || typeof chat !== "object" || !("budget" in chat)) return undefined;
+  const budget = chat.budget;
+  if (!budget || typeof budget !== "object" || !("calls" in budget) || !("reported_tokens" in budget)) return undefined;
+  return typeof budget.calls === "number" && typeof budget.reported_tokens === "number"
+    ? { calls: budget.calls, tokens: budget.reported_tokens } : undefined;
+});
 
 // Typing "/" lists the slash commands; arrows pick, Tab or Enter completes.
 const menuIndex = ref(0);
@@ -25,7 +38,7 @@ const menuClosed = ref(false);
 const matches = computed(() => {
   const m = ui.composer.match(/^\/(\S*)$/);
   return m && !menuClosed.value
-    ? commands.filter((c) => c.name.startsWith(m[1].toLowerCase()))
+    ? availableCommands.value.filter((c) => c.name.startsWith(m[1].toLowerCase()))
     : [];
 });
 watch(
@@ -65,8 +78,14 @@ function keydown(e: KeyboardEvent) {
 }
 
 async function runCommand(text: string) {
-  const parsed = parseCommand(text);
-  if (!parsed) return false;
+  const parsed = parseCommand(text, availableCommands.value);
+  if (!parsed) {
+    if (nativeChat.value) {
+      await attempt(async () => { throw Error("Unsupported native command. Type / to see this workspace's commands."); });
+      return true;
+    }
+    return false;
+  }
   pending.value = true;
   await attempt(async () => {
     await parsed.command.run(parsed.arg);
@@ -89,16 +108,17 @@ async function send() {
   try {
     saved = JSON.parse(sessionStorage.getItem("dpi.pending-send") ?? "null");
   } catch {}
+  const sendMode = nativeChat.value ? "reject" : mode.value;
   const requestId =
-    saved?.key === key && saved.content === content && saved.mode === mode.value
+    saved?.key === key && saved.content === content && saved.mode === sendMode
       ? saved.requestId
       : newId();
   sessionStorage.setItem(
     "dpi.pending-send",
-    JSON.stringify({ key, content, mode: mode.value, requestId }),
+    JSON.stringify({ key, content, mode: sendMode, requestId }),
   );
   await attempt(async () => {
-    await handle.send(content, mode.value, requestId);
+    await handle.send(content, sendMode, requestId);
     sessionStorage.removeItem("dpi.pending-send");
     ui.composer = "";
   });
@@ -151,7 +171,8 @@ function withdraw(id: number) {
       />
       <div class="composer-toolbar">
         <div class="composer-left">
-          <div class="queue-mode">
+          <span v-if="nativeChat" class="hint">{{ busy ? "Native agent is working" : "Live native kagent" }} · one task at a time</span>
+          <div v-else class="queue-mode">
             <select
               v-model="mode"
               aria-label="When busy"
@@ -165,6 +186,7 @@ function withdraw(id: number) {
         </div>
         <div class="composer-right">
           <button
+            v-if="!nativeChat"
             class="interrupt"
             :disabled="!busy || interrupting"
             title="Stop foreground work and owned subagents (Escape). Background jobs continue."
@@ -174,7 +196,7 @@ function withdraw(id: number) {
           ><button
             class="send"
             aria-label="Send message"
-            :disabled="!ui.composer.trim() || pending || !agentState.ready || !online"
+            :disabled="!ui.composer.trim() || pending || !agentState.ready || !online || (nativeChat && busy && !ui.composer.startsWith('/'))"
             @click="send"
           >
             <ArrowUp :size="20" />
@@ -183,7 +205,8 @@ function withdraw(id: number) {
       </div>
     </div>
     <div class="composer-footnote">
-      <span><i class="live-dot" />Closing this window never interrupts your agent.</span>
+      <span v-if="nativeChat && detail?.interaction?.kind === 'native-chat'"><i class="live-dot" />Live Kimi · read-only incident tools · {{ nativeBudget?.calls ?? '…' }}/{{ detail.interaction.maxCalls }} model requests · {{ nativeBudget?.tokens ?? '…' }}/{{ detail.interaction.tokenBudget }} reported tokens. Closing the browser leaves native work running.</span>
+      <span v-else><i class="live-dot" />Closing this window never interrupts your agent.</span>
     </div>
   </div>
 </template>

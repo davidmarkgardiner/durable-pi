@@ -1,0 +1,7 @@
+.state/
+profile.json
+node_modules/
+dist/
+__pycache__/
+*.pyc
+*.token

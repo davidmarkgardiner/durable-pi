@@ -15,13 +15,14 @@ import {
 import type { TaskNode, TaskOutcome } from "@sdk/api";
 import { jobRunDone } from "@sdk/jobs";
 import { message } from "../client/hub";
-import { agentHandle, sessionHandle, tasks } from "../client/store";
+import { agentHandle, detail, sessionHandle, tasks } from "../client/store";
 import { decide, jobDef, jobDefs, jobRuns, openAgent, pending, revealRun, startJob } from "../client/jobs";
 
 const error = ref("");
 const stopping = ref(false);
 const recent = ref<TaskOutcome[]>([]);
 const inspection = ref<unknown>();
+const native = computed(() => detail.value?.config.model?.provider === 'kagent');
 
 const status = (value: string) =>
   ({
@@ -122,12 +123,16 @@ const outcomes = computed(() =>
 
     <section class="task-section" aria-label="Durable jobs">
       <h3><Repeat :size="18" />Durable jobs</h3>
-      <p class="hint">
+      <p v-if="!native" class="hint">
         Repeatable workflows with named phases. Every run follows the same phases and saves a checkpoint after each one.
         Start one here, or ask your agent: it finds these with <code>list_durable_jobs</code>, starts them with
         <code>run_durable_job</code> and checks them with <code>check_durable_job</code>. Runs play out live in the chat.
       </p>
-      <p v-if="!jobDefs.length" class="task-empty">This device has no durable jobs. Deploy the latest backend to it.</p>
+      <article v-for="run in native ? jobRuns : []" :key="run.id" class="job-def">
+        <strong>{{ run.title }}</strong><p>{{ status(run.status) }}</p>
+        <button class="text-button" @click="revealRun(run.id)">{{ run.approval === 'pending' ? 'View merge or remediation decision' : 'Show workflow in transcript' }}</button>
+      </article>
+      <p v-if="!jobDefs.length" class="task-empty">This device has no launchable Pi jobs. Its active tasks and approval cards appear in the native agent transcript.</p>
       <article v-for="def in jobDefs" :key="def.id" class="job-def" :data-job="def.id">
         <div class="job-def-head">
           <Workflow :size="18" />
@@ -199,13 +204,13 @@ const outcomes = computed(() =>
           </button>
         </li>
       </ul>
-      <p class="hint">Interrupt or Esc stops foreground work and what it owns. Stop all also stops background runs.</p>
-      <button class="secondary danger" :disabled="!tasks.length || stopping" @click="stopAll">
+      <p v-if="!native" class="hint">Interrupt or Esc stops foreground work and what it owns. Stop all also stops background runs.</p>
+      <button v-if="!native" class="secondary danger" :disabled="!tasks.length || stopping" @click="stopAll">
         <Octagon :size="18" />Stop all
       </button>
     </section>
 
-    <details class="raw task-section" @toggle="loadRuntime">
+    <details v-if="!native" class="raw task-section" @toggle="loadRuntime">
       <summary><Clock3 :size="18" />Runtime details</summary>
       <p class="hint">Recent task results and recovery records, read from the device when opened.</p>
       <details v-for="task in outcomes" :key="task.id" class="raw">

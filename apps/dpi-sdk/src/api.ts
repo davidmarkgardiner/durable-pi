@@ -70,9 +70,11 @@ export interface DeviceInfo {
   storage: { dataDir: string; catalogPath: string; appStatePath: string };
   /** The checkout the backend runs from (repo root locally, `code_dir` on deployed devices). */
   codeDir?: string;
-  capabilities: Array<"events" | "docs" | "demo" | "jobs">;
+  capabilities: Array<"events" | "docs" | "demo" | "jobs" | "logs" | "agent-capabilities">;
   /** Durable jobs any agent on this device can run (`POST .../demo/jobs` or the run_durable_job tool). */
   jobs?: JobDef[];
+  /** Optional limits for adapters that expose only part of the client contract. */
+  clientControls?: { createSessions?: boolean; createAgents?: boolean; messages?: boolean; configure?: boolean };
 }
 
 export interface DirListing {
@@ -204,8 +206,25 @@ export interface AgentDetail extends AgentSummary {
     parameters?: unknown;
     writes: boolean;
     offered: boolean;
+    requireApproval?: boolean;
+    server?: string;
   }[];
   extensions: string[];
+  interaction?:
+    | { kind: "approval-only"; reason: string }
+    | { kind: "native-chat"; maxCalls: number; tokenBudget: number; connectionError: string | null;
+        budget: { calls: number; max_calls: number; reported_tokens: number; token_budget: number; halted: boolean } | null };
+  capabilityInventory?: {
+    observedAt: string;
+    source: string;
+    cluster: string;
+    template: string;
+    harness: string;
+    instructions: string;
+    skills: { name: string; source: string }[];
+    models: { name: string; provider: string; model: string; selected: boolean; mode: string }[];
+    runtime: { snapshots: string; compaction: string };
+  };
 }
 
 export interface CreateSessionBody {

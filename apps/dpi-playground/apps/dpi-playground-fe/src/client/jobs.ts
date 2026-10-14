@@ -67,8 +67,13 @@ export async function startJob(def: JobDef) {
 
 export const decide = (run: JobRun, approved: boolean) =>
   act(`decide:${run.id}`, () =>
-    agentHandle.value!.demo(`jobs/${run.id}/approval`, { approved }),
+    agentHandle.value!.demo(`jobs/${run.id}/approval`, ["native-kagent-approval", "native-kagent-gitlab-merge"].includes(run.job)
+      ? { approved, binding: run.approvalBinding }
+      : { approved }),
   );
+
+export const startIncident = (run: JobRun) =>
+  act(`incident:${run.id}`, () => agentHandle.value!.demo(`jobs/${run.id}/start`, {}));
 
 export const stopRun = (run: JobRun) =>
   act(`stop:${run.id}`, () => sessionHandle.value!.abortTask(run.id));

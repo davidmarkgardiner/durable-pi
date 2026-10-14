@@ -21,8 +21,10 @@ import {
 import { jobRunDone, type JobPhaseRun, type JobRun, type JobStep } from "@sdk/jobs";
 import { decide, jobDef, now, openAgent, pending, seconds, stopRun } from "../client/jobs";
 
-const props = defineProps<{ run: JobRun }>();
+const props = defineProps<{ run: JobRun; compact?: boolean }>();
 const def = computed(() => jobDef(props.run.job));
+const nativeRun = computed(() => ["native-kagent-approval", "native-kagent-gitlab-merge"].includes(props.run.job));
+const mergeRun = computed(() => props.run.job === "native-kagent-gitlab-merge");
 const done = computed(() => jobRunDone(props.run));
 const elapsed = computed(() => seconds((props.run.endedAt ?? now.value) - props.run.startedAt));
 const statusText: Record<JobRun["status"], string> = {
@@ -77,16 +79,16 @@ const approvalPhase = computed(() => props.run.phases.find((p) => p.status === "
       <span class="job-run-icon"><Workflow :size="22" /></span>
       <div class="job-run-titles">
         <div class="job-run-eyebrow">
-          <span>DURABLE JOB</span>
-          <span class="job-run-repeat"><Repeat :size="15" />Repeatable workflow, run #{{ run.run }}</span>
+          <span>{{ nativeRun ? "KAGENT TASK" : "DURABLE JOB" }}</span>
+          <span class="job-run-repeat"><Repeat :size="15" />{{ nativeRun ? "Native controller approval" : `Repeatable workflow, run #${run.run}` }}</span>
         </div>
         <h3>{{ run.title }}</h3>
       </div>
       <span class="job-run-status" :class="run.status"><i />{{ statusText[run.status] }}</span>
     </header>
     <p v-if="def" class="job-run-about">{{ def.summary }}</p>
-    <div class="job-run-meta">
-      <span>task #{{ run.id }}</span>
+    <div v-if="!compact" class="job-run-meta">
+      <span>{{ nativeRun ? "Native kagent proposal" : `task #${run.id}` }}</span>
       <span>{{ run.startedBy === "agent" ? "started by the agent" : "started by you" }}</span>
       <span>{{ elapsed }}</span>
       <span v-for="[k, v] in inputs" :key="k" class="job-run-input">{{ k }}={{ v }}</span>
@@ -112,7 +114,7 @@ const approvalPhase = computed(() => props.run.phases.find((p) => p.status === "
       </li>
     </ol>
 
-    <div class="job-phases">
+    <div v-if="!compact" class="job-phases">
       <details v-for="(phase, i) in run.phases" :key="phase.id" class="job-phase" :class="`ph-${phase.status}`" :open="open(phase)">
         <summary>
           <span class="job-phase-n">{{ i + 1 }}</span>
@@ -146,26 +148,53 @@ const approvalPhase = computed(() => props.run.phases.find((p) => p.status === "
     </div>
 
     <div v-if="run.approval === 'pending'" class="job-approval" role="group" aria-label="Approval">
-      <div><ShieldCheck :size="20" /><strong>Approve to continue</strong></div>
-      <p>
+      <div><ShieldCheck :size="20" /><strong>{{ mergeRun ? "Merge this rollback MR?" : nativeRun ? "Approve this synthetic change?" : "Approve to continue" }}</strong></div>
+      <template v-if="nativeRun && run.decisionSummary">
+        <dl class="decision-summary">
+          <dt>Cause</dt><dd>{{ run.decisionSummary.cause }}</dd>
+          <dt>Proposed change</dt><dd>{{ run.decisionSummary.change }}</dd>
+          <dt>Expected result</dt><dd>{{ run.decisionSummary.expectedResult }}</dd>
+          <dt>Scope</dt><dd>{{ run.decisionSummary.scope }}</dd>
+          <dt>Reviewer</dt><dd>{{ run.decisionSummary.review }}</dd>
+        </dl>
+        <p v-if="run.decisionSummary.mergeRequestUrl"><a :href="run.decisionSummary.mergeRequestUrl" target="_blank" rel="noopener noreferrer">Review the GitLab merge request</a></p>
+        <p v-if="run.decisionSummary.pipelineUrl"><a :href="run.decisionSummary.pipelineUrl" target="_blank" rel="noopener noreferrer">View successful checkout-tests pipeline</a></p>
+        <p>{{ run.decisionSummary.approveEffect }}</p>
+        <p>{{ run.decisionSummary.declineEffect }}</p>
+        <details><summary>Exact proposal binding</summary>
+          <p>Operation {{ run.decisionSummary.operation }}, revision {{ run.decisionSummary.revision }}.</p>
+          <p class="decision-hash">{{ mergeRun ? "MR head SHA" : "SHA-256" }} {{ run.decisionSummary.proposalHash }}</p>
+        </details>
+      </template>
+      <p v-else-if="nativeRun">Read the pending tool request and proposal in the transcript before deciding. Approval continues that exact native kagent tool call.</p>
+      <p v-else>
         {{ approvalPhase ? phaseSpec(approvalPhase.id)?.summary : "This run waits for you" }}. It is paused on a saved
         checkpoint: close the browser or restart the device and the decision will still be waiting.
       </p>
       <div class="job-approval-buttons">
-        <button class="primary small" :disabled="!!pending" @click="decide(run, true)"><Check :size="18" />Approve &amp; continue</button>
-        <button class="secondary" :disabled="!!pending" @click="decide(run, false)">Decline</button>
+        <button class="primary small" :disabled="!!pending || (nativeRun && !run.approvalBinding)" @click="decide(run, true)"><Check :size="18" />{{ mergeRun ? "Approve & merge MR" : nativeRun ? "Approve synthetic change" : "Approve & continue" }}</button>
+        <button class="secondary" :disabled="!!pending || (nativeRun && !run.approvalBinding)" @click="decide(run, false)">{{ nativeRun ? "Reject proposal" : "Decline" }}</button>
       </div>
     </div>
     <p v-if="run.error && run.status !== 'aborted'" class="message-error">{{ run.error }}</p>
 
     <footer class="job-run-foot">
-      <span>{{
+      <span v-if="nativeRun">Task and approval state come from the kagent controller. The transcript exposes the original native session and task IDs.</span>
+      <span v-else>{{
         run.background
           ? "Runs in the background: the conversation owns it, so Interrupt leaves it running."
           : "Owned by this tool call: Interrupt stops it."
       }}
         Each phase saves a checkpoint, so a restart resumes the current phase.</span>
-      <button v-if="!done" class="secondary danger" :disabled="!!pending" @click="stopRun(run)"><Octagon :size="16" />Stop</button>
+      <button v-if="!done && !nativeRun" class="secondary danger" :disabled="!!pending" @click="stopRun(run)"><Octagon :size="16" />Stop</button>
     </footer>
   </article>
 </template>
+
+<style scoped>
+.decision-summary { margin: 12px 0; }
+.decision-summary dt { font-weight: 600; margin-top: 10px; }
+.decision-summary dd { margin: 3px 0 0; line-height: 1.5; }
+.decision-hash { overflow-wrap: anywhere; font-family: monospace; font-size: 12px; }
+.job-approval a { color: var(--accent); text-underline-offset: 3px; }
+</style>

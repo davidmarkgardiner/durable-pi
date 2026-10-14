@@ -18,12 +18,15 @@ import { lineage } from "@sdk/models";
 import TranscriptItem from "./TranscriptItem.vue";
 import DeviceIcon from "./DeviceIcon.vue";
 import Composer from "./Composer.vue";
+import WorkflowResults from "./WorkflowResults.vue";
+import { jobRuns } from "../client/jobs";
 import {
   activeLineage,
   agent,
   agentHandle,
   agentState,
   device,
+  detail,
   notify,
   preset,
   select,
@@ -39,6 +42,8 @@ const chat = ref<HTMLElement>();
 const lineageNav = ref<HTMLElement>();
 const picker = ref(false);
 const items = computed(() => agentState.value.items);
+const resultRun = computed(() => jobRuns.value.find((run) => run.job === "native-kagent-gitlab-merge"));
+const view = ref<"results" | "transcript">("results");
 const liveItem = computed(() => items.value.some((i) => i.kind === "assistant" && i.streaming));
 const runningTool = computed(() =>
   items.value.some(
@@ -121,6 +126,10 @@ function renameAgent() {
 
 watch(selected, () => {
   picker.value = false;
+  view.value = "results";
+});
+watch(view, (value) => {
+  if (value === "results") void nextTick(() => chat.value?.scrollTo({ top: 0, behavior: "instant" }));
 });
 
 // Follow the bottom of the transcript unless the reader scrolled up.
@@ -134,10 +143,13 @@ watch(
   { flush: "pre" },
 );
 watch(agent.version, () => {
-  if (pinned)
-    void nextTick(() =>
-      chat.value?.scrollTo({ top: chat.value.scrollHeight, behavior: "instant" }),
-    );
+  if (pinned && (!resultRun.value || view.value === "transcript"))
+    void nextTick(() => {
+      if (!resultRun.value || view.value === "transcript") chat.value?.scrollTo({ top: chat.value.scrollHeight, behavior: "instant" });
+    });
+});
+watch(() => Boolean(resultRun.value), (available) => {
+  if (available && view.value === "results") void nextTick(() => chat.value?.scrollTo({ top: 0, behavior: "instant" }));
 });
 watch(
   () => activeLineage.value.length,
@@ -267,6 +279,10 @@ watch(
         </template>
       </div>
     </header>
+    <div v-if="resultRun" class="result-view-switch" role="group" aria-label="Result presentation">
+      <button :class="{ active: view === 'results' }" :aria-pressed="view === 'results'" @click="view = 'results'">Workflow results</button>
+      <button :class="{ active: view === 'transcript' }" :aria-pressed="view === 'transcript'" @click="view = 'transcript'">Full agent transcript</button>
+    </div>
     <div ref="chat" class="chat-scroll" data-testid="chat">
       <div v-if="!agentState.ready" class="chat-empty">
         <Activity :size="30" />
@@ -275,6 +291,7 @@ watch(
         <p v-if="agent.fault.value" class="message-error">{{ agent.fault.value }}</p>
         <p v-else>The agent keeps working on {{ device?.id }} while this view connects.</p>
       </div>
+      <WorkflowResults v-else-if="resultRun && view === 'results'" :run="resultRun" :items="items" @transcript="view = 'transcript'" />
       <template v-else>
         <div v-if="!items.length" class="chat-empty">
           <div class="agent-orb"><img src="/icons/durable-pi.svg" alt="Durable Pi" /><i /></div>
@@ -317,6 +334,13 @@ watch(
         <p v-for="(n, i) in agentState.notices" :key="i" class="message-error">{{ n }}</p>
       </template>
     </div>
-    <Composer />
+    <Composer v-if="device?.info?.clientControls?.messages !== false && (!device?.info?.capabilities.includes('agent-capabilities') || detail?.interaction?.kind === 'native-chat')" />
+    <p v-else class="hint" style="padding: 1rem">{{ detail?.interaction?.kind === 'approval-only' ? detail.interaction.reason : 'This proactive incident runs in kagent. Use the native approval card for its human decision.' }}</p>
   </section>
 </template>
+
+<style scoped>
+.result-view-switch { display: flex; gap: 4px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+.result-view-switch button { padding: 8px 12px; border-radius: 6px; font-size: 12px; color: var(--muted); }
+.result-view-switch button.active { color: var(--accent); background: #ff89970c; }
+</style>

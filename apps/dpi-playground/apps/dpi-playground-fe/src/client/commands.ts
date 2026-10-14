@@ -1,5 +1,6 @@
 // Composer slash commands: the same names as dpi-tui. Unknown commands are sent to the agent as text.
 import { THINKING_LEVELS, type ThinkingLevel } from "@sdk/api";
+import { computed } from "vue";
 import {
   agentHandle,
   agentState,
@@ -10,6 +11,7 @@ import {
   sessionHandle,
   showInspector,
   ui,
+  device,
 } from "./store";
 
 export interface SlashCommand {
@@ -44,6 +46,10 @@ export const commands: SlashCommand[] = [
     },
   },
   { name: "tasks", description: "Open the Tasks panel", run: () => showInspector("tasks") },
+  { name: "tools", description: "Open this agent's tools", run: () => showInspector("tools") },
+  { name: "skills", description: "Open skills and instructions", run: () => showInspector("skills") },
+  { name: "models", description: "Open the model garden", run: () => showInspector("models") },
+  { name: "logs", description: "Open proactive log classifications", run: () => showInspector("logs") },
   {
     name: "new",
     args: "[name]",
@@ -112,8 +118,17 @@ export const commands: SlashCommand[] = [
 ];
 
 /** `/name rest` → the command and its argument, or undefined when the text is not a known command. */
-export function parseCommand(text: string) {
+export const availableCommands = computed(() => {
+  const native = device.value?.info?.capabilities.includes("agent-capabilities");
+  return commands.filter((command) => native
+    ? ["tasks", "tools", "skills", "models", "logs", "help"].includes(command.name)
+    : !["skills", "models", "logs"].includes(command.name)).map((command) => native && command.name === "help"
+      ? { ...command, description: "Show supported native chat commands", run: () => notify("Native chat commands: /tasks, /tools, /skills, /models and /logs open the pane tabs. Messages go to the selected native session. Human decisions use their exact approval cards.") }
+      : command);
+});
+
+export function parseCommand(text: string, supported: readonly SlashCommand[] = commands) {
   const m = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
-  const command = m && commands.find((c) => c.name === m[1]);
+  const command = m && supported.find((c) => c.name === m[1]);
   return command ? { command, arg: m![2].trim() } : undefined;
 }

@@ -16,6 +16,8 @@ import {
 import { THINKING_LEVELS, type ThinkingLevel } from "@sdk/api";
 import type { StateChange } from "@sdk/app-state";
 import StateEditor from "./StateEditor.vue";
+import LogsPanel from "./LogsPanel.vue";
+import CapabilitiesPanel from "./CapabilitiesPanel.vue";
 import TasksPanel from "./TasksPanel.vue";
 import ExtensionsPanel from "./ExtensionsPanel.vue";
 import ContextBar from "./ContextBar.vue";
@@ -52,13 +54,18 @@ const signatures = computed(
   () => new Map(detail.value?.tools.map((t) => [t.name, toolSignature(t.name, t.parameters)])),
 );
 
-const tabs = [
+const tabs = computed(() => [
   { id: "session", label: "Session", icon: FolderOpen },
   { id: "state", label: "State", icon: Braces },
   { id: "tasks", label: "Tasks", icon: Activity },
   { id: "tools", label: "Tools", icon: Wrench },
+  ...(device.value?.info?.capabilities.includes("agent-capabilities") ? [
+    { id: "skills", label: "Skills", icon: Puzzle },
+    { id: "models", label: "Models", icon: Server },
+  ] : []),
   { id: "extensions", label: "Extend", icon: Puzzle },
-];
+  ...(device.value?.info?.capabilities.includes("logs") ? [{ id: "logs", label: "Logs", icon: Activity }] : []),
+]);
 const usageRows = computed(() => [
   { label: "Input", tokens: usage.value.input, cost: usage.value.inputCost },
   { label: "Output", tokens: usage.value.output, cost: usage.value.outputCost },
@@ -71,6 +78,7 @@ function configure(
   patch: Parameters<NonNullable<typeof agentHandle.value>["configure"]>[0],
   done?: string,
 ) {
+  if (device.value?.info?.clientControls?.configure === false) return;
   void attempt(async () => {
     await agentHandle.value!.configure(patch);
     await refreshDetail();
@@ -148,6 +156,8 @@ async function saveStateJson() {
   }
 }
 
+const stateEditable = computed(() => device.value?.info?.capabilities.includes("demo") !== false);
+const configurable = computed(() => device.value?.info?.clientControls?.configure !== false);
 const readOnly = computed(() => detail.value?.config.readOnly === true);
 const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered).length ?? 0);
 </script>
@@ -180,7 +190,7 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
       </button>
     </div>
     <template v-else>
-      <div class="inspector-tabs" role="tablist" aria-label="Session details">
+      <div class="inspector-tabs" :class="{ 'with-capabilities': device?.info?.capabilities.includes('agent-capabilities') }" role="tablist" aria-label="Session details">
         <button
           v-for="t in tabs"
           :id="`inspector-tab-${t.id}`"
@@ -244,7 +254,7 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
             <div class="section-label">
               <span>AGENT</span>
             </div>
-            <button class="model-button" @click="ui.dialog = { kind: 'models' }">
+            <button :disabled="!configurable" class="model-button" @click="ui.dialog = { kind: 'models' }">
               <img :src="icon(agentState.agent.model?.modelId)" alt="" />
               <div>
                 <strong>{{
@@ -261,6 +271,7 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
               <span>Thinking</span
               ><select
                 aria-label="Thinking level"
+                :disabled="!configurable"
                 :value="agentState.agent.thinkingLevel ?? 'low'"
                 @change="
                   configure(
@@ -272,8 +283,8 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
                 <option v-for="level in THINKING_LEVELS" :key="level">{{ level }}</option>
               </select>
             </div>
-            <ContextBar />
-            <section class="stats-section" aria-labelledby="stats-title">
+            <ContextBar v-if="configurable" />
+            <section v-if="detail?.config.model?.provider !== 'kagent'" class="stats-section" aria-labelledby="stats-title">
               <div class="section-label"><span id="stats-title">STATS</span></div>
               <div class="metrics">
                 <div :title="`${usage.tokens.toLocaleString('en-US')} total tokens`">
@@ -313,12 +324,15 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
             <h2>App State</h2>
             <Braces :size="18" />
           </div>
-          <p class="hint app-state-description">
+          <p v-if="!stateEditable" class="hint">Observed Kubernetes logs, classifications, task and actor state. This view is read only.</p>
+          <pre v-if="!stateEditable" class="app-state-json">{{ stateDraft }}</pre>
+          <p v-if="stateEditable" class="hint app-state-description">
             One shared JSON object for every agent, session and fork on {{ device?.id }}. You and
             your agents can read, create, update or delete values and fields. Changes appear live
             and persist across closed browsers, interrupted agents and backend restarts.
           </p>
           <textarea
+            v-if="stateEditable"
             v-model="stateDraft"
             class="app-state-json"
             aria-label="App State JSON"
@@ -326,7 +340,7 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
             :disabled="stateSaving || !shared"
             rows="12"
           />
-          <div class="state-json-actions">
+          <div v-if="stateEditable" class="state-json-actions">
             <span v-if="stateConflict" class="hint"
               >State changed elsewhere. Load the latest JSON before saving.</span
             >
@@ -348,11 +362,15 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
           </div>
           <p v-if="stateError" class="message-error" role="alert">{{ stateError }}</p>
           <StateEditor
+            v-if="stateEditable"
             :value="shared?.value ?? {}"
             :disabled="stateSaving || stateDirty || !shared"
             @change="editState"
           />
         </template>
+        <LogsPanel v-if="ui.tab === 'logs'" />
+        <CapabilitiesPanel v-if="ui.tab === 'skills'" section="skills" />
+        <CapabilitiesPanel v-if="ui.tab === 'models'" section="models" />
         <TasksPanel v-if="ui.tab === 'tasks'" />
         <ExtensionsPanel v-if="ui.tab === 'extensions'" />
         <template v-if="ui.tab === 'tools'"
@@ -360,7 +378,8 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
             <h2>Tools</h2>
             <span class="tag">{{ offeredTools }} / {{ detail?.tools.length ?? 0 }}</span>
           </div>
-          <p class="hint">Every tool this agent's extensions provide. Open one to see its definition.</p>
+          <p class="hint">{{ configurable ? "Every tool this agent's extensions provide. Open one to see its definition." : "Native MCP tools selected by this agent's Kubernetes template. Descriptions come from controller discovery." }}</p>
+          <p v-if="detail?.capabilityInventory" class="hint">Observed {{ detail.capabilityInventory.observedAt }}</p>
           <div class="hook-card">
             <div>
               <ShieldCheck :size="18" /><strong>Read only</strong
@@ -369,6 +388,7 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
                 role="switch"
                 :aria-checked="readOnly"
                 aria-label="Read only"
+                :disabled="!configurable"
                 :class="{ on: readOnly }"
                 @click="
                   configure(
@@ -380,10 +400,11 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
                 <span />
               </button>
             </div>
-            <p>
+            <p v-if="configurable">
               Offers this agent only tools that read. Tools that create, update or delete leave its next request, and
               the choice is stored with the agent.
             </p>
+            <p v-else>The Kubernetes template owns this tool selection. This pane cannot change it.</p>
           </div>
           <details
             v-for="tool in detail?.tools"
@@ -394,7 +415,8 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
             <summary>
               <Wrench :size="18" /><strong>{{ tool.name }}</strong
               ><span v-if="!tool.offered" class="tag tool-disabled">disabled</span
-              ><span class="tag">{{ tool.replay === "safe" ? "replay safe" : "interrupt on crash" }}</span>
+              ><span v-if="tool.requireApproval" class="tag">Human approval</span
+              ><span v-if="configurable" class="tag">{{ tool.replay === "safe" ? "replay safe" : "interrupt on crash" }}</span>
             </summary>
             <p>{{ tool.description }}</p>
             <pre
@@ -402,7 +424,8 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
               class="tool-signature"
               :aria-label="`${tool.name} TypeScript definition`"
             ><code><span v-for="(t, i) in signatures.get(tool.name)" :key="i" :class="`tk-${t.kind}`">{{ t.text }}</span></code></pre>
-            <small>{{
+            <small v-if="!configurable">MCP server: {{ tool.server }}. Tool schemas are not included in controller discovery.</small>
+            <small v-else>{{
               tool.replay === "safe"
                 ? "An interrupted execution may run again after recovery."
                 : "A crash records an interrupted result instead of rerunning this effect."
@@ -413,3 +436,9 @@ const offeredTools = computed(() => detail.value?.tools.filter((t) => t.offered)
     </template>
   </aside>
 </template>
+
+<style scoped>
+.inspector-tabs.with-capabilities { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); position: relative; padding-right: 28px; }
+.inspector-tabs.with-capabilities button[role="tab"] { padding: 10px 4px; gap: 5px; }
+.inspector-tabs.with-capabilities .panel-toggle { position: absolute; right: 2px; top: 9px; }
+</style>

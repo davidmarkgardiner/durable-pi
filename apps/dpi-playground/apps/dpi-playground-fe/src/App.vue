@@ -143,13 +143,13 @@ onBeforeUnmount(() => {
           <CircleHelp :size="19" /></button
         ><button
           class="secondary small new-agent-button"
-          :disabled="!selected || !online || creatingAgent"
+          :disabled="!selected || !online || creatingAgent || device?.info?.clientControls?.createAgents === false"
           title="Start a fresh agent in this session"
           @click="newAgent"
         >
           <Plus :size="18" />New agent
         </button>
-        <button class="primary small" @click="openNewSession">
+        <button class="primary small" :disabled="device?.info?.clientControls?.createSessions === false" @click="openNewSession">
           <Plus :size="18" />New session
         </button>
         <button
