@@ -1,33 +1,35 @@
-# Proceed with approved images and regular kagent agents
+# Run the workplace demo with kagent only
 
-16 October 2026. Give this page to the work agent alongside [START-HERE.md](remote-kagent-pi-demo/START-HERE.md). This page supersedes its Substrate-dependent runtime requirement for the current workplace attempt. David reports that Substrate is disabled pending Azure policy approval. The workplace configuration has not been inspected here.
+16 October 2026. This page supersedes the Pi and Substrate requirements in [START-HERE.md](remote-kagent-pi-demo/START-HERE.md) for the workplace attempt. Use the existing regular kagent agents and workplace interface. Do not deploy Pi, Durable Pi, the Pi UI, or the Pi bridge. David reports that Substrate is disabled pending Azure policy approval. The workplace configuration has not been inspected here.
 
-## Prepare the three demo images
+## Prepare the demo images
 
-Yes, build or import these custom images through the bank's approved process before deploying the demo. Reuse existing copies only when their source revision, build arguments, and digests match. Run builds from `remote-kagent-pi-demo/` with `runtime/` as the build context.
+Build or import the following through the bank's approved process. Reuse existing copies only when source revision, build arguments, and digests match. Run builds from `remote-kagent-pi-demo/` with `runtime/` as the build context.
 
-| Profile field | Build recipe | Purpose |
+| Profile field | Build recipe | Workplace purpose |
 | --- | --- | --- |
-| `runtime_image` | `runtime/Dockerfile` | One shared image for the Pi bridge and MCP tools backend, with different startup commands. |
+| `runtime_image` | `runtime/Dockerfile` | Demo MCP tools backend for Kubernetes inspection, GitLab rollback, and verification. Override the default command with `python /app/tools.py`. Do not start `work_bridge.py`. |
 | `healthy_image` | `runtime/Dockerfile.app`, `APP_VERSION=v1` | Healthy checkout application and rollback target. |
 | `regression_image` | `runtime/Dockerfile.app`, `APP_VERSION=v2` | Deliberately broken checkout application for the synthetic incident. |
 
-These are demo application images. Reuse the installed approved agent runtime and ModelConfig separately. Both Dockerfiles default to `python:3.12.12-slim-bookworm` and accept `PYTHON_BASE` for an approved mirror. Make `runtime/requirements.lock` dependencies available to the builder. The generated GitLab CI also names that Python image. Update its reference when an internal mirror is required.
+Three custom images remain if the bundled MCP backend is retained. If existing approved workplace tools provide the same scoped operations and approval controls, adapt to those tools and omit the custom backend image. The two checkout images remain. Reuse the installed approved kagent runtime and ModelConfig separately.
 
-David needs to identify the approved registry paths and build/import route if these are unavailable to the work agent. The work agent can discover the target architecture and existing image-pull Secret references, then prepare builds. Record the source commit and resulting digests, then fill `runtime_image`, `healthy_image`, and `regression_image` in the private profile. Verify actual image availability on the target nodes before launch.
+Both Dockerfiles default to `python:3.12.12-slim-bookworm` and accept `PYTHON_BASE` for an approved mirror. Make `runtime/requirements.lock` dependencies available to the builder. The generated GitLab CI also names that Python image. Update its reference when an internal mirror is required.
 
-## Use the existing dev pod without requiring Podman
+David needs to identify the approved registry paths and build/import route if unavailable to the work agent. Discover the target architecture and image-pull Secret references. Record the source commit and image digests in the private profile. Verify image availability on target nodes.
 
-Podman is optional. Use the bank's existing CI or approved remote builder. The dev pod can run source checks, generate plans, and use its approved Kubernetes access. A running dev pod does not automatically provide an image builder or access to the host's image store. Do not add privileged nested containers or mount a host engine socket for this demo.
+## Use the dev pod without requiring Podman
 
-Prefer registry pulls. If this is genuinely a kind cluster and local image loading is approved, its host operator can use `kind load image-archive IMAGES.tar --name VERIFIED_CLUSTER_NAME`. Load every eligible node and use a compatible pull policy such as `IfNotPresent`. An image stored only inside the dev pod is insufficient. [kind image loading](https://kind.sigs.k8s.io/docs/user/quick-start/#loading-an-image-into-your-cluster)
+Podman is optional. Use existing CI or an approved remote builder. The dev pod can run source checks, generate plans, and use approved Kubernetes access. It does not automatically provide an image builder. Do not add privileged nested containers or mount a host engine socket.
 
-## Adapt to the working regular-agent configuration
+Prefer registry pulls. For an approved kind-only loading route, its host operator can use `kind load image-archive IMAGES.tar --name VERIFIED_CLUSTER_NAME`. Load every eligible node and use a compatible pull policy such as `IfNotPresent`. Images stored only inside the dev pod are insufficient. [kind image loading](https://kind.sigs.k8s.io/docs/user/quick-start/#loading-an-image-into-your-cluster)
 
-Keep Substrate disabled. Inspect the approved target context, installed kagent version, served API groups, one Ready regular agent, its Deployment, ModelConfig reference, MCP bindings, and actual A2A/session/approval protocol. Read Secret references without exporting Secret values. Derive the new specialist and reviewer from those working declarations. Preserve existing agents and platform settings.
+## Adapt to the working kagent configuration
 
-The original bundle requires 1.x `AgentTemplate`/`Harness` resources and native gRPC APIs. Its `scripts/preflight.py` enforces that schema, and `scripts/render.py` copies the seed Harness. Upstream 1.x sessions require Substrate. Deployment-based regular agents exist in 0.x. Changing an image or removing a Harness field cannot provide compatibility. [kagent 1.x runtime](https://kagent.dev/docs/kagent/1.x/about/core-concepts/), [regular agents](https://kagent.dev/docs/kagent/0.x/concepts/agents/)
+Keep Substrate disabled. Inspect the target context, kagent version, served APIs, a Ready regular agent and its Deployment, ModelConfig reference, MCP bindings, and A2A/session/approval protocol. Read Secret references without exporting values. Derive the specialist and read-only reviewer from working declarations. Preserve existing agents and platform settings.
 
-Prepare and validate an adapter for the observed API, including manifests, bridge session/task handling, inventory, verification, and human approval. Keep the real MCP investigation, exact-head MR/CI review, David's merge decision, Flux reconciliation, and final checkout probes. Keep classification labelled synthetic. If approval or task semantics cannot be preserved, report that specific blocker before launch. Do not claim snapshot recovery or end-to-end success from generated manifests or source tests.
+The original preflight and renderer require 1.x `AgentTemplate`/`Harness` resources. Upstream 1.x sessions require Substrate; Deployment-based regular agents exist in 0.x. Use the observed workplace API and adapt these scripts rather than copying the original Harness. [kagent 1.x runtime](https://kagent.dev/docs/kagent/1.x/about/core-concepts/), [regular agents](https://kagent.dev/docs/kagent/0.x/concepts/agents/)
 
-Return the image digests, sanitized discovery, adapter changes and checks, and remaining blockers. Continue source/build preparation while image access is arranged. Retain the original bundle's checksums and ZIP unchanged; this page is a separate addendum.
+Replace the Pi start button, incident dispatch, inventory, approval delivery, and verification with the existing kagent interface and supported APIs. Starting `tools.py` alone does not perform these functions. If retaining the bundled tools, connect the real human decision to its independent ledger, which currently requires native task and approval IDs. Never fabricate IDs or bypass that gate. Validate this integration before launch.
+
+Keep the real MCP investigation, exact-head MR/CI review, David's merge decision, Flux reconciliation, and final checkout probes. Label classification synthetic. Report unsupported approval or task semantics as a blocker. Return image digests, sanitized discovery, adaptation checks, and remaining blockers. This is a documentation correction, not a completed adapter. Retain the original bundle checksums and ZIP unchanged.
